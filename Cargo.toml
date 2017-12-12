@@ -1,10 +1,10 @@
 [package]
 name = "indextree-ng"
-version = "1.0"
+version = "1.0.0"
 license = "MIT"
 readme = "README.md"
 keywords = ["tree", "arena", "index", "indextree", "trie"]
-authors = ["Sascha Grunert <mail@saschagruenrt.de>", "Karsten König <grayfox@outerhaven.de"]
+authors = ["Sascha Grunert <mail@saschagruenrt.de>", "Karsten König <grayfox@outerhaven.de>"]
 repository = "https://github.com/raymontag/indextree"
 homepage = "https://github.com/raymontag/indextree"
 documentation = "https://docs.rs/indextree-ng"

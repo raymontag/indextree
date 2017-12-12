@@ -1,5 +1,7 @@
 # indextree
 
+[![Build Status](https://travis-ci.org/raymontag/indextree.svg?branch=master)](https://travis-ci.org/raymontag/indextree)
+
 ## Arena based tree structure with multithreading support
 This is a fork of the [`indextree` crate](https://github.com/saschagrunert/indextree) 
 which allows to remove nodes. The original version was not capable of removing
