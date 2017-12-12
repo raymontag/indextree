@@ -3,15 +3,15 @@ use indextree::Arena;
 
 use std::cell::Cell;
 
+struct DropTracker<'a>(&'a Cell<u32>);
+impl<'a> Drop for DropTracker<'a> {
+    fn drop(&mut self) {
+        self.0.set(&self.0.get() + 1);
+    }
+}
+
 #[test]
 fn arenatree_success_create() {
-    struct DropTracker<'a>(&'a Cell<u32>);
-    impl<'a> Drop for DropTracker<'a> {
-        fn drop(&mut self) {
-            self.0.set(&self.0.get() + 1);
-        }
-    }
-
     let drop_counter = Cell::new(0);
     {
         let mut new_counter = 0;
@@ -24,17 +24,17 @@ fn arenatree_success_create() {
         };
 
         let a = new!();  // 1
-        a.append(new!(), arena);  // 2
-        a.append(new!(), arena);  // 3
-        a.prepend(new!(), arena);  // 4
+        assert!(a.append(new!(), arena).is_ok());  // 2
+        assert!(a.append(new!(), arena).is_ok());  // 3
+        assert!(a.prepend(new!(), arena).is_ok());  // 4
         let b = new!();  // 5
-        b.append(a, arena);
-        a.insert_before(new!(), arena);  // 6
-        a.insert_before(new!(), arena);  // 7
-        a.insert_after(new!(), arena);  // 8
-        a.insert_after(new!(), arena);  // 9
+        assert!(b.append(a, arena).is_ok());
+        assert!(a.insert_before(new!(), arena).is_ok());  // 6
+        assert!(a.insert_before(new!(), arena).is_ok());  // 7
+        assert!(a.insert_after(new!(), arena).is_ok());  // 8
+        assert!(a.insert_after(new!(), arena).is_ok());  // 9
         let c = new!();  // 10
-        b.append(c, arena);
+        assert!(b.append(c, arena).is_ok());
 
         assert_eq!(drop_counter.get(), 0);
         arena[c].previous_sibling().unwrap().detach(arena);
@@ -53,7 +53,7 @@ fn arenatree_failure_prepend() {
     let arena = &mut Arena::new();
     let a = arena.new_node(1);
     let b = arena.new_node(2);
-    a.prepend(b, arena);
+    assert!(a.prepend(b, arena).is_ok());
 }
 
 #[test]
@@ -61,8 +61,37 @@ fn arenatree_success_detach() {
     let arena = &mut Arena::new();
     let a = arena.new_node(1);
     let b = arena.new_node(1);
-    a.append(b, arena);
+    assert!(a.append(b, arena).is_ok());
     assert_eq!(b.ancestors(arena).into_iter().count(), 2);
     b.detach(arena);
     assert_eq!(b.ancestors(arena).into_iter().count(), 1);
 }
+
+#[test]
+fn arenatree_remove_node() {
+    let drop_counter = Cell::new(0);    
+    let mut new_counter = 0;
+    let arena = &mut Arena::new();
+    macro_rules! new {
+        () => {{
+            new_counter += 1;
+            arena.new_node((new_counter, DropTracker(&drop_counter)))
+        }}
+    };
+
+    let a = new!();
+    let b = new!();
+    let c = new!();
+    let d = new!();
+    assert!(a.append(b, arena).is_ok());
+    assert!(a.append(c, arena).is_ok());
+    assert!(b.append(d, arena).is_ok());
+
+    assert!(arena.remove_node(a).is_ok());
+    assert_eq!(drop_counter.get(), 1);
+    assert_eq!(arena.len(), 3);
+    assert_eq!(b.ancestors(arena).into_iter().count(), 1);
+    assert_eq!(c.ancestors(arena).into_iter().count(), 1);
+    assert_eq!(d.ancestors(arena).into_iter().count(), 2);
+}
+

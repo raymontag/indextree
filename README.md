@@ -1,10 +1,19 @@
 # indextree
-[![Build Status](https://travis-ci.org/saschagrunert/indextree.svg)](https://travis-ci.org/saschagrunert/indextree) [![Build status](https://ci.appveyor.com/api/projects/status/byraapuh9py02us0?svg=true)](https://ci.appveyor.com/project/saschagrunert/indextree) [![Coverage Status](https://coveralls.io/repos/github/saschagrunert/indextree/badge.svg?branch=master)](https://coveralls.io/github/saschagrunert/indextree?branch=master) [![doc indextree](https://img.shields.io/badge/master_doc-indextree-blue.svg)](https://saschagrunert.github.io/indextree) [![License MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/saschagrunert/indextree/blob/master/LICENSE) [![Crates.io](https://img.shields.io/crates/v/indextree.svg)](https://crates.io/crates/indextree) [![doc.rs](https://docs.rs/indextree/badge.svg)](https://docs.rs/indextree)
+
 ## Arena based tree structure with multithreading support
-This arena tree structure is using just a single `Vec` and numerical identifiers (indices in the vector) instead of
-reference counted pointers. This means there is no `RefCell` and mutability is handled in a way much more
-idiomatic to Rust through unique (&mut) access to the arena. The tree can be sent or shared across threads like a `Vec`.
-This enables general multiprocessing support like parallel tree traversals.
+This is a fork of the [`indextree` crate](https://github.com/saschagrunert/indextree) 
+which allows to remove nodes. The original version was not capable of removing
+nodes as the initial idea was to drop all nodes at the same time if the lifetime 
+of the underlying memory arena has ended.
+
+The arena tree structure is using a single `Vec`, a `HashMap` and numerical 
+identifiers. Every node holds an id which is mapped to an index of the vector
+via the `HashMap`. This allows to drop single nodes before the lifetime of the
+arena hash ended. The downside is that this disables the general multiprocessing 
+support of the original approach as `HashMap`s are not thread safe itself.
+
+There is no `RefCell` and mutability is handled in a way much more idiomatic to Rust 
+through unique (&mut) access to the arena. 
 
 ### Example usage
 ```rust
@@ -17,7 +26,16 @@ let arena = &mut Arena::new();
 let a = arena.new_node(1);
 let b = arena.new_node(2);
 
-// Append a to b
+// Append b to a
 a.append(b, arena);
 assert_eq!(b.ancestors(arena).into_iter().count(), 2);
+
+//Access a node
+assert_eq!(arena[b], 2);
+
+// Remove a node
+arena.remove_node(a);
+assert_eq!(b.ancestors(arena).into_iter().count(), 1);
+
 ```
+

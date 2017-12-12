@@ -1,9 +1,18 @@
 //! # Arena based tree data structure
 //!
-//! This arena tree structure is using just a single `Vec` and numerical identifiers (indices in the vector) instead of
-//! reference counted pointers like. This means there is no `RefCell` and mutability is handled in a way much more
-//! idiomatic to Rust through unique (&mut) access to the arena. The tree can be sent or shared across threads like a `Vec`.
-//! This enables general multiprocessing support like parallel tree traversals.
+//! This is a fork of the [`indextree` crate](https://github.com/saschagrunert/indextree) 
+//! which allows to remove nodes. The original version was not capable of removing
+//! nodes as the initial idea was to drop all nodes at the same time if the lifetime 
+//! of the underlying memory arena has ended.
+//! 
+//! The arena tree structure is using a single `Vec`, a `HashMap` and numerical 
+//! identifiers. Every node holds an id which is mapped to an index of the vector
+//! via the `HashMap`. This allows to drop single nodes before the lifetime of the
+//! arena hash ended. The downside is that this disables the general multiprocessing 
+//! support of the original approach as `HashMap`s are not thread safe itself.
+//! 
+//! There is no `RefCell` and mutability is handled in a way much more idiomatic to Rust 
+//! through unique (&mut) access to the arena. 
 //!
 //! # Example usage
 //! ```
@@ -19,14 +28,51 @@
 //! // Append b to a
 //! a.append(b, arena);
 //! assert_eq!(b.ancestors(arena).into_iter().count(), 2);
+//!
+//! //Access a node
+//! assert_eq!(arena[b].data, 2);
+//!
+//! // Remove a node
+//! arena.remove_node(a);
+//! assert_eq!(b.ancestors(arena).into_iter().count(), 1);
+//!
 //! ```
 use std::{mem, fmt};
+use std::error;
+use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
+
+pub use self::IndexTreeError::*;
+
+#[doc = "
+Use this for catching errors that
+can happen when using indextree::Tree.
+"]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+pub enum IndexTreeError {
+    /// Tried to apply a method to the same node like node.append(node, arena)
+    SameNodeErr,
+}
+
+impl fmt::Display for IndexTreeError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str(error::Error::description(self))
+    }
+}
+
+impl error::Error for IndexTreeError {
+    fn description(&self) -> &str {
+        match *self {
+            SameNodeErr => "Tried to apply a method to the same node like node.append(node, arena)",
+        }
+    }
+}
+
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 /// A node identifier within a particular `Arena`
 pub struct NodeId {
-    index: usize,
+    id: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -58,17 +104,20 @@ impl<T> fmt::Display for Node<T> {
 /// An `Arena` structure containing certain Nodes
 pub struct Arena<T> {
     nodes: Vec<Node<T>>,
+    lookup: HashMap<usize, usize>,
 }
 
 impl<T> Arena<T> {
     /// Create a new empty `Arena`
     pub fn new() -> Arena<T> {
-        Arena { nodes: Vec::new() }
+        Arena { nodes: Vec::new(),
+                lookup: HashMap::new(), }
     }
 
     /// Create a new node from its associated data.
     pub fn new_node(&mut self, data: T) -> NodeId {
         let next_index = self.nodes.len();
+        let next_id = self.lookup.keys().fold(0, |acc, &x| std::cmp::max(acc+1, x));
         self.nodes.push(Node {
             parent: None,
             first_child: None,
@@ -77,40 +126,68 @@ impl<T> Arena<T> {
             next_sibling: None,
             data: data,
         });
-        NodeId { index: next_index }
+        self.lookup.insert(next_id, next_index);
+        NodeId { id: next_id }
+    }
+
+    /// Removes a node from the arena. Detaches all children before.
+    pub fn remove_node(&mut self, node: NodeId) -> Result<(), IndexTreeError>{
+        let index = *self.lookup.get(&node.id).expect("No node for given NodeId");
+
+        let mut children: Vec<NodeId> = vec![];
+        for child in node.children(self) {
+            children.push(child.clone());
+        }
+        for child in children {
+            child.detach(self);
+        }
+
+        let highest_index = self.nodes.len() - 1;
+        let mut highest_index_id: usize = 0;
+        for (key, value)  in self.lookup.iter() {
+            if *value == highest_index {
+                highest_index_id = *key;
+                break;
+            }
+        }
+
+        let _ = self.lookup.remove(&node.id);
+        let _ = self.nodes.swap_remove(index);
+        self.lookup.insert(highest_index_id, index);
+
+        Ok(())
     }
     
-    // Count nodes in arena.
-    pub fn count(&self) -> usize {
+    /// Returns the number of nodes in Arena
+    pub fn len(&self) -> usize {
         self.nodes.len()
     }
     
-    // Returns true if arena has no nodes, false otherwise
+    /// Returns true if arena has no nodes, false otherwise
     pub fn is_empty(&self) -> bool {
-        if self.count() == 0 {
+        if self.len() == 0 {
             true
         }
         else {
             false
         }
     }
-}
 
-trait GetPairMut<T> {
-    /// Get mutable references to two distinct nodes. Panics if the two given IDs are the same.
-    fn get_pair_mut(&mut self, a: usize, b: usize, same_index_error_message: &'static str) -> (&mut T, &mut T);
-}
-
-impl<T> GetPairMut<T> for Vec<T> {
-    fn get_pair_mut(&mut self, a: usize, b: usize, same_index_error_message: &'static str) -> (&mut T, &mut T) {
-        if a == b {
-            panic!(same_index_error_message)
+    // Get mutable references to two distinct nodes. Returns IndexTreeError::SameNodeErr if a == b.
+    fn get_pair_mut(&mut self, a: &NodeId, b: &NodeId) -> Result<(&mut Node<T>, &mut Node<T>), IndexTreeError> {
+        if a.id == b.id {
+            return Err(IndexTreeError::SameNodeErr);
         }
-        let (xs, ys) = self.split_at_mut(std::cmp::max(a, b));
-        if a < b {
-            (&mut xs[a], &mut ys[0])
+
+        let error_msg = "No node for NodeId";
+        let a_index = *self.lookup.get(&a.id).expect(error_msg);
+        let b_index = *self.lookup.get(&b.id).expect(error_msg);
+        
+        let (xs, ys) = self.nodes.split_at_mut(std::cmp::max(a_index, b_index));
+        if a_index < b_index {
+            Ok((&mut xs[a_index], &mut ys[0]))
         } else {
-            (&mut ys[0], &mut xs[b])
+            Ok((&mut ys[0], &mut xs[b_index]))
         }
     }
 }
@@ -119,13 +196,15 @@ impl<T> Index<NodeId> for Arena<T> {
     type Output = Node<T>;
 
     fn index(&self, node: NodeId) -> &Node<T> {
-        &self.nodes[node.index]
+        let node_index = *self.lookup.get(&node.id).expect("No node for this NodeId");
+        &self.nodes[node_index]
     }
 }
 
 impl<T> IndexMut<NodeId> for Arena<T> {
     fn index_mut(&mut self, node: NodeId) -> &mut Node<T> {
-        &mut self.nodes[node.index]
+        let node_index = *self.lookup.get(&node.id).expect("No node for this NodeId");
+        &mut self.nodes[node_index]
     }
 }
 
@@ -250,13 +329,12 @@ impl NodeId {
     }
 
     /// Append a new child to this node, after existing children.
-    pub fn append<T>(self, new_child: NodeId, arena: &mut Arena<T>) {
+    pub fn append<T>(self, new_child: NodeId, arena: &mut Arena<T>) -> Result<(), IndexTreeError> {
         new_child.detach(arena);
         let last_child_opt;
         {
-            let (self_borrow, new_child_borrow) = arena.nodes.get_pair_mut(self.index,
-                                                                           new_child.index,
-                                                                           "Can not append a node to itself");
+            let (self_borrow , new_child_borrow) = arena.get_pair_mut(&self,
+                                                                      &new_child)?;
             new_child_borrow.parent = Some(self);
             last_child_opt = mem::replace(&mut self_borrow.last_child, Some(new_child));
             if let Some(last_child) = last_child_opt {
@@ -270,16 +348,18 @@ impl NodeId {
             debug_assert!(arena[last_child].next_sibling.is_none());
             arena[last_child].next_sibling = Some(new_child);
         }
+
+        Ok(())
     }
 
     /// Prepend a new child to this node, before existing children.
-    pub fn prepend<T>(self, new_child: NodeId, arena: &mut Arena<T>) {
+    pub fn prepend<T>(self, new_child: NodeId, arena: &mut Arena<T>) -> Result<(), IndexTreeError> {
         new_child.detach(arena);
         let first_child_opt;
         {
-            let (self_borrow, new_child_borrow) = arena.nodes.get_pair_mut(self.index,
-                                                                           new_child.index,
-                                                                           "Can not prepend a node to itself");
+            let (self_borrow, new_child_borrow) = arena.get_pair_mut(&self,
+                                                                     &new_child)?;
+        
             new_child_borrow.parent = Some(self);
             first_child_opt = mem::replace(&mut self_borrow.first_child, Some(new_child));
             if let Some(first_child) = first_child_opt {
@@ -293,17 +373,19 @@ impl NodeId {
             debug_assert!(arena[first_child].previous_sibling.is_none());
             arena[first_child].previous_sibling = Some(new_child);
         }
+
+        Ok(())
     }
 
     /// Insert a new sibling after this node.
-    pub fn insert_after<T>(self, new_sibling: NodeId, arena: &mut Arena<T>) {
+    pub fn insert_after<T>(self, new_sibling: NodeId, arena: &mut Arena<T>) -> Result<(), IndexTreeError> {
         new_sibling.detach(arena);
         let next_sibling_opt;
         let parent_opt;
         {
-            let (self_borrow, new_sibling_borrow) = arena.nodes.get_pair_mut(self.index,
-                                                                             new_sibling.index,
-                                                                             "Can not insert a node after itself");
+            let (self_borrow, new_sibling_borrow) = arena.get_pair_mut(&self,
+                                                                      &new_sibling)?;
+        
             parent_opt = self_borrow.parent;
             new_sibling_borrow.parent = parent_opt;
             new_sibling_borrow.previous_sibling = Some(self);
@@ -319,17 +401,18 @@ impl NodeId {
             debug_assert!(arena[parent].last_child.unwrap() == self);
             arena[parent].last_child = Some(new_sibling);
         }
+
+        Ok(())
     }
 
     /// Insert a new sibling before this node.
-    pub fn insert_before<T>(self, new_sibling: NodeId, arena: &mut Arena<T>) {
+    pub fn insert_before<T>(self, new_sibling: NodeId, arena: &mut Arena<T>) -> Result<(), IndexTreeError> {
         new_sibling.detach(arena);
         let previous_sibling_opt;
         let parent_opt;
         {
-            let (self_borrow, new_sibling_borrow) = arena.nodes.get_pair_mut(self.index,
-                                                                             new_sibling.index,
-                                                                             "Can not insert a node before itself");
+            let (self_borrow, new_sibling_borrow) = arena.get_pair_mut(&self,
+                                                                      &new_sibling)?;
             parent_opt = self_borrow.parent;
             new_sibling_borrow.parent = parent_opt;
             new_sibling_borrow.next_sibling = Some(self);
@@ -345,6 +428,8 @@ impl NodeId {
             debug_assert!(arena[parent].first_child.unwrap() == self);
             arena[parent].first_child = Some(new_sibling);
         }
+
+        Ok(())
     }
 }
 

@@ -1,5 +1,6 @@
-MIT License
+## MIT License
 
+Copyright (c) 2017, Karsten-Kai König <mail@kkoenig.net>
 Copyright (c) 2017 Sascha Grunert
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
