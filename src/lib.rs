@@ -16,7 +16,7 @@
 //!
 //! # Example usage
 //! ```
-//! use indextree::Arena;
+//! use indextree_ng::Arena;
 //!
 //! // Create a new arena
 //! let arena = &mut Arena::new();

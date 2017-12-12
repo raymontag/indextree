@@ -1,6 +1,6 @@
 [package]
 name = "indextree-ng"
-version = "1.0.0"
+version = "1.0.1"
 license = "MIT"
 readme = "README.md"
 keywords = ["tree", "arena", "index", "indextree", "trie"]

@@ -1,5 +1,5 @@
-extern crate indextree;
-use indextree::Arena;
+extern crate indextree_ng;
+use indextree_ng::Arena;
 
 use std::cell::Cell;
 
