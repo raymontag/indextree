@@ -46,7 +46,7 @@ pub use self::IndexTreeError::*;
 
 #[doc = "
 Use this for catching errors that
-can happen when using indextree::Tree.
+can happen when using indextree_ng::Tree.
 "]
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum IndexTreeError {

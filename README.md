@@ -1,4 +1,4 @@
-# indextree
+# indextree-ng
 
 [![Build Status](https://travis-ci.org/raymontag/indextree.svg?branch=master)](https://travis-ci.org/raymontag/indextree)
 
@@ -19,7 +19,7 @@ through unique (&mut) access to the arena.
 
 ### Example usage
 ```rust
-use indextree::Arena;
+use indextree_ng::Arena;
 
 // Create a new arena
 let arena = &mut Arena::new();
