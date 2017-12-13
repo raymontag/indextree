@@ -87,7 +87,7 @@ fn arenatree_remove_node() {
     assert!(a.append(c, arena).is_ok());
     assert!(b.append(d, arena).is_ok());
 
-    assert!(arena.remove_node(a).is_ok());
+    arena.remove_node(a);
     assert_eq!(drop_counter.get(), 1);
     assert_eq!(arena.len(), 3);
     assert_eq!(b.ancestors(arena).into_iter().count(), 1);

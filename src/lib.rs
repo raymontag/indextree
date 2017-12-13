@@ -131,7 +131,7 @@ impl<T> Arena<T> {
     }
 
     /// Removes a node from the arena. Detaches all children before.
-    pub fn remove_node(&mut self, node: NodeId) -> Result<(), IndexTreeError>{
+    pub fn remove_node(&mut self, node: NodeId) {
         let index = *self.lookup.get(&node.id).expect("No node for given NodeId");
 
         let mut children: Vec<NodeId> = vec![];
@@ -154,8 +154,6 @@ impl<T> Arena<T> {
         let _ = self.lookup.remove(&node.id);
         let _ = self.nodes.swap_remove(index);
         self.lookup.insert(highest_index_id, index);
-
-        Ok(())
     }
     
     /// Returns the number of nodes in Arena
