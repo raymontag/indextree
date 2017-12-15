@@ -11,8 +11,7 @@ of the underlying memory arena has ended.
 The arena tree structure is using a single `Vec`, a `HashMap` and numerical 
 identifiers. Every node holds an id which is mapped to an index of the vector
 via the `HashMap`. This allows to drop single nodes before the lifetime of the
-arena hash ended. The downside is that this disables the general multiprocessing 
-support of the original approach as `HashMap`s are not thread safe itself.
+arena hash ended.
 
 There is no `RefCell` and mutability is handled in a way much more idiomatic to Rust 
 through unique (&mut) access to the arena. 
