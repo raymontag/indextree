@@ -68,7 +68,7 @@ impl error::Error for IndexTreeError {
 }
 
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 /// A node identifier within a particular `Arena`
 pub struct NodeId {
     id: usize,
